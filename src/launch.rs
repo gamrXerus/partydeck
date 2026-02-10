@@ -92,8 +92,13 @@ pub fn launch_cmds(
             && !PATH_STEAM
                 .join("steam/steamapps/common/SteamLinuxRuntime_soldier")
                 .exists())
+        || (runtime == "sniper"
+            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_sniper").exists()
+            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_sniper-arm64").exists())
+        || (runtime == "steamrt4"
+            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_4").exists())
     {
-        return Err(format!("Steam Runtime {runtime} not found!").into());
+        return Err(format!("Steam Runtime {runtime} not found! Runtime must be installed on the same drive that the Steam client is installed on.").into());
     }
 
     let mut cmds: Vec<Command> = (0..instances.len())
@@ -300,6 +305,29 @@ pub fn launch_cmds(
                     cmd.arg(
                         PATH_STEAM.join(
                             "steam/steamapps/common/SteamLinuxRuntime_soldier/_v2-entry-point",
+                        ),
+                    );
+                    cmd.arg("--");
+                }
+                "sniper" => {
+                    let sniper_path = PATH_STEAM.join(
+                        "steam/steamapps/common/SteamLinuxRuntime_sniper/_v2-entry-point",
+                    );
+                    // old installations of sniper go in a folder named -arm64 even though it is x86_64?
+                    let sniper_arm_path = PATH_STEAM.join(
+                        "steam/steamapps/common/SteamLinuxRuntime_sniper-arm64/_v2-entry-point",
+                    );
+                    if sniper_path.exists() {
+                        cmd.arg(sniper_path);
+                    } else if sniper_arm_path.exists() {
+                        cmd.arg(sniper_arm_path);
+                    }
+                    cmd.arg("--");
+                }
+                "steamrt4" => {
+                    cmd.arg(
+                        PATH_STEAM.join(
+                            "steam/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point",
                         ),
                     );
                     cmd.arg("--");

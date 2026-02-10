@@ -256,6 +256,8 @@ impl PartyApp {
                 ui.radio_value(&mut h.runtime, "".to_string(), "None");
                 ui.radio_value(&mut h.runtime, "scout".to_string(), "1.0 (scout)");
                 ui.radio_value(&mut h.runtime, "soldier".to_string(), "2.0 (soldier)");
+                ui.radio_value(&mut h.runtime, "sniper".to_string(), "3.0 (sniper)");
+                ui.radio_value(&mut h.runtime, "steamrt4".to_string(), "4.0 (steamrt4)");
             });
         }
         
