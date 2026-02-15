@@ -2,10 +2,10 @@ use super::app::{MenuPage, PartyApp, SettingsPage};
 use super::config::*;
 use crate::handler::*;
 use crate::input::*;
+use crate::monitor::get_monitors_sdl;
 use crate::paths::*;
 use crate::profiles::*;
 use crate::util::*;
-use crate::monitor::get_monitors_sdl;
 
 use dialog::DialogBox;
 use eframe::egui::RichText;
@@ -56,6 +56,7 @@ impl PartyApp {
         ui.horizontal(|ui| {
             ui.heading("Settings");
             ui.selectable_value(&mut self.settings_page, SettingsPage::General, "General");
+            ui.selectable_value(&mut self.settings_page, SettingsPage::Proton, "Proton");
             ui.selectable_value(
                 &mut self.settings_page,
                 SettingsPage::Gamescope,
@@ -66,6 +67,7 @@ impl PartyApp {
 
         match self.settings_page {
             SettingsPage::General => self.display_settings_general(ui),
+            SettingsPage::Proton => self.display_settings_proton(ui),
             SettingsPage::Gamescope => self.display_settings_gamescope(ui),
         }
 
@@ -254,13 +256,18 @@ impl PartyApp {
                 ui.radio_value(&mut h.runtime, "".to_string(), "None");
                 ui.radio_value(&mut h.runtime, "scout".to_string(), "1.0 (scout)");
                 ui.radio_value(&mut h.runtime, "soldier".to_string(), "2.0 (soldier)");
+                ui.radio_value(&mut h.runtime, "sniper".to_string(), "3.0 (sniper)");
+                ui.radio_value(&mut h.runtime, "steamrt4".to_string(), "4.0 (steamrt4)");
             });
         }
-        
+
         if h.spec_ver != HANDLER_SPEC_CURRENT_VERSION {
             if ui.button("Update Handler Specification Version").clicked() {
                 h.spec_ver = HANDLER_SPEC_CURRENT_VERSION;
-                msg("Handler Specification Version Updated", "Remember to save your changes.");
+                msg(
+                    "Handler Specification Version Updated",
+                    "Remember to save your changes.",
+                );
             }
         }
 
@@ -420,9 +427,10 @@ impl PartyApp {
                 }
 
                 if self.instance_add_dev == None {
-                    let invitebtn = ui.add(
-                        egui::Button::image_and_text(egui::include_image!("../../res/BTN_NORTH.png"), "[A] Invite New Device")
-                    );
+                    let invitebtn = ui.add(egui::Button::image_and_text(
+                        egui::include_image!("../../res/BTN_NORTH.png"),
+                        "[A] Invite New Device",
+                    ));
                     if invitebtn.clicked() {
                         self.instance_add_dev = Some(i);
                     }
@@ -527,18 +535,6 @@ impl PartyApp {
                 self.input_devices = scan_input_devices(&self.options.pad_filter_type);
             }
         });
-
-        ui.horizontal(|ui| {
-        let proton_ver_label = ui.label("Proton version");
-        let proton_ver_editbox = ui.add(
-            egui::TextEdit::singleline(&mut self.options.proton_version)
-                .hint_text("GE-Proton"),
-        );
-        if proton_ver_label.hovered() || proton_ver_editbox.hovered() {
-            self.infotext = "DEFAULT: GE-Proton\n\nSpecify a Proton version. This can be a path, e.g. \"/path/to/proton\" or just a name, e.g. \"GE-Proton\" for the latest version of Proton-GE. If left blank, this will default to \"GE-Proton\". If unsure, leave this blank.".to_string();
-        }
-        });
-
         ui.horizontal(|ui| {
             let cpu_affinity_label = ui.label("CPU threads per instance");
             let cpu_affinity_dragvalue =
@@ -548,14 +544,6 @@ impl PartyApp {
             }
         });
 
-        let proton_separate_pfxs_check = ui.checkbox(
-            &mut self.options.proton_separate_pfxs,
-            "Run instances in separate Proton prefixes",
-        );
-        if proton_separate_pfxs_check.hovered() {
-            self.infotext = "DEFAULT: Enabled\n\nRuns each instance in separate Proton prefixes. If unsure, leave this checked. Multiple prefixes takes up more disk space, but generally provides better compatibility and fewer issues with Proton-based games.".to_string();
-        }
-        
         let profile_unique_dirs_check = ui.checkbox(
             &mut self.options.profile_unique_dirs,
             "Unique per-profile environments",
@@ -582,6 +570,42 @@ impl PartyApp {
 
         ui.separator();
 
+        if ui.button("Open PartyDeck Data Folder").clicked() {
+            if let Err(_) = std::process::Command::new("xdg-open")
+                .arg(PATH_PARTY.clone())
+                .status()
+            {
+                msg("Error", "Couldn't open PartyDeck Data Folder!");
+            }
+        }
+    }
+
+    pub fn display_settings_proton(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+        let proton_ver_label = ui.label("Proton version");
+        let proton_ver_editbox = ui.add(
+            egui::TextEdit::singleline(&mut self.options.proton_version)
+                .hint_text("GE-Proton"),
+        );
+        if proton_ver_label.hovered() || proton_ver_editbox.hovered() {
+            self.infotext = "DEFAULT: GE-Proton\n\nSpecify a Proton version. This can be a path, e.g. \"/path/to/proton\" or just a name, e.g. \"GE-Proton\" for the latest version of Proton-GE. If left blank, this will default to \"GE-Proton\". If unsure, leave this blank.".to_string();
+        }
+        });
+
+        let proton_separate_pfxs_check = ui.checkbox(
+            &mut self.options.proton_separate_pfxs,
+            "Run instances in separate Proton prefixes",
+        );
+        if proton_separate_pfxs_check.hovered() {
+            self.infotext = "DEFAULT: Enabled\n\nRuns each instance in separate Proton prefixes. If unsure, leave this checked. Multiple prefixes takes up more disk space, but generally provides better compatibility and fewer issues with Proton-based games.".to_string();
+        }
+
+        let proton_wow64_check =
+            ui.checkbox(&mut self.options.proton_wow64, "Run Proton in WoW64 mode");
+        if proton_wow64_check.hovered() {
+            self.infotext = "DEFAULT: Enabled\n\nRuns Proton games in the new Wine WoW64 mode. If unsure, leave this checked.".to_string();
+        }
+
         if ui.button("Erase All Proton Prefix Data").clicked() {
             if yesno(
                 "Erase Prefix?",
@@ -593,15 +617,6 @@ impl PartyApp {
                 } else {
                     msg("Data Erased", "Proton prefix data successfully erased.");
                 }
-            }
-        }
-
-        if ui.button("Open PartyDeck Data Folder").clicked() {
-            if let Err(_) = std::process::Command::new("xdg-open")
-                .arg(PATH_PARTY.clone())
-                .status()
-            {
-                msg("Error", "Couldn't open PartyDeck Data Folder!");
             }
         }
     }

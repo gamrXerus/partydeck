@@ -45,7 +45,7 @@ pub fn launch_game(
             false => "splitscreen_kwin.js",
         };
 
-        kwin_dbus_start_script(PATH_RES.join(script))?;
+        kwin_dbus_start_script(PATH_RES.join(script)).map_err(|e| format!("Failed to start KWin script: {}", e))?;
     }
 
     let sleep_time = match h.pause_between_starts {
@@ -135,8 +135,13 @@ pub fn launch_cmds(
             && !PATH_STEAM
                 .join("steam/steamapps/common/SteamLinuxRuntime_soldier")
                 .exists())
+        || (runtime == "sniper"
+            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_sniper").exists()
+            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_sniper-arm64").exists())
+        || (runtime == "steamrt4"
+            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_4").exists())
     {
-        return Err(format!("Steam Runtime {runtime} not found!").into());
+        return Err(format!("Steam Runtime {runtime} not found! Runtime must be installed on the same drive that the Steam client is installed on.").into());
     }
 
     let mut cmds: Vec<Command> = (0..instances.len())
@@ -185,7 +190,6 @@ pub fn launch_cmds(
 
         cmd.env("SDL_JOYSTICK_HIDAPI", "0");
         cmd.env("ENABLE_GAMESCOPE_WSI", "0");
-        cmd.env("PROTON_DISABLE_HIDRAW", "1");
         if h.sdl2_override != SDL2Override::No {
             let path_sdl = match h.sdl2_override {
                 SDL2Override::Srt => {
@@ -205,6 +209,10 @@ pub fn launch_cmds(
             cmd.env("WINEPREFIX", &path_pfx);
             cmd.env("PROTON_VERB", "run");
             cmd.env("PROTONPATH", protonpath);
+            cmd.env("PROTON_DISABLE_HIDRAW", "1");
+            if cfg.proton_wow64 {
+                cmd.env("PROTON_USE_WOW64", "1");
+            }
         }
         if cfg.pad_filter_type != PadFilterType::NoSteamInput {
             cmd.env("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "1");
@@ -321,14 +329,17 @@ pub fn launch_cmds(
                 cmd.env("SteamGameId", &appid.to_string());
             }
 
+            let sdk32_link = std::fs::read_link(PATH_STEAM.join("sdk32")).map_err(|e| format!("Failed to read sdk32 link: {}", e))?;
+            let sdk64_link = std::fs::read_link(PATH_STEAM.join("sdk64")).map_err(|e| format!("Failed to read sdk64 link: {}", e))?;
+
             cmd.arg("--bind").args([
                 PATH_RES.join("goldberg/linux32"),
-                std::fs::read_link(PATH_STEAM.join("sdk32"))?,
+                sdk32_link,
             ]);
 
             cmd.arg("--bind").args([
                 PATH_RES.join("goldberg/linux64"),
-                std::fs::read_link(PATH_STEAM.join("sdk64"))?,
+                sdk64_link,
             ]);
 
             if win {
@@ -351,6 +362,29 @@ pub fn launch_cmds(
                     cmd.arg(
                         PATH_STEAM.join(
                             "steam/steamapps/common/SteamLinuxRuntime_soldier/_v2-entry-point",
+                        ),
+                    );
+                    cmd.arg("--");
+                }
+                "sniper" => {
+                    let sniper_path = PATH_STEAM.join(
+                        "steam/steamapps/common/SteamLinuxRuntime_sniper/_v2-entry-point",
+                    );
+                    // old installations of sniper go in a folder named -arm64 even though it is x86_64?
+                    let sniper_arm_path = PATH_STEAM.join(
+                        "steam/steamapps/common/SteamLinuxRuntime_sniper-arm64/_v2-entry-point",
+                    );
+                    if sniper_path.exists() {
+                        cmd.arg(sniper_path);
+                    } else if sniper_arm_path.exists() {
+                        cmd.arg(sniper_arm_path);
+                    }
+                    cmd.arg("--");
+                }
+                "steamrt4" => {
+                    cmd.arg(
+                        PATH_STEAM.join(
+                            "steam/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point",
                         ),
                     );
                     cmd.arg("--");
