@@ -23,6 +23,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Debug - Show commit and list deps/releases
+        run: |
+          git log --oneline -1
+          ls -la deps/releases/ || echo "deps/releases not found"
+          ls -la deps/releases/gbe-linux-release/regular/x64/ || echo "x64 not found"
+
       - name: Build with gcc
         run: |
           cd deps/gamescope
