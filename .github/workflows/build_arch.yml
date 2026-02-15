@@ -15,7 +15,7 @@ jobs:
             libxtst libxkbcommon libdrm libinput wayland-protocols benchmark \
             xorg-xwayland pipewire cmake \
             libavif libheif aom rav1e libdecor libxdamage \
-            luajit
+            luajit p7zip curl
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -33,7 +33,12 @@ jobs:
           cd src
           ls
           pwd
-          
+
+      - name: Download dependencies
+        run: |
+          chmod +x get_deps_releases.sh
+          ./get_deps_releases.sh
+
       - name: Build the rest
         run: |
           ls

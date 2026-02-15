@@ -17,7 +17,7 @@ jobs:
             wayland-protocols-devel \
             xorg-x11-server-Xwayland pipewire-devel cmake \
             libavif-devel libheif-devel rav1e-devel libdecor-devel libXxf86vm-devel hwdata-devel \
-            libXdamage-devel xorg-x11-server-Xwayland-devel luajit-devel gcc gcc-c++ make google-benchmark-devel openssl openssl-devel libarchive libarchive-devel \
+            libXdamage-devel xorg-x11-server-Xwayland-devel luajit-devel gcc gcc-c++ make google-benchmark-devel openssl openssl-devel libarchive libarchive-devel p7zip-plugins curl \
 
       - uses: actions/checkout@v4
         with:
@@ -34,6 +34,11 @@ jobs:
           cd build-gcc/src
           ls
           pwd
+
+      - name: Download dependencies
+        run: |
+          chmod +x get_deps_releases.sh
+          ./get_deps_releases.sh
 
       - name: Build the rest
         run: |
