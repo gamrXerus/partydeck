@@ -35,11 +35,6 @@ jobs:
           ls
           pwd
 
-      - name: Download dependencies
-        run: |
-          chmod +x get_deps_releases.sh
-          ./get_deps_releases.sh
-
       - name: Build the rest
         run: |
           ls
