@@ -2,7 +2,7 @@ use super::app::{MenuPage, PartyApp, SettingsPage};
 use super::config::*;
 use crate::handler::*;
 use crate::input::*;
-use crate::monitor::get_monitors_sdl;
+use crate::monitor::get_monitors_errorless;
 use crate::paths::*;
 use crate::profiles::*;
 use crate::util::*;
@@ -24,14 +24,13 @@ impl PartyApp {
         ui.heading("Welcome to PartyDeck");
         ui.separator();
         ui.label("Press SELECT/BACK or Tab to unlock gamepad navigation.");
-        ui.label("PartyDeck is in the very early stages of development; as such, you will likely encounter bugs, issues, and strange design decisions.");
-        ui.label("For debugging purposes, it's recommended to read terminal output (stdout) for further information on errors.");
         ui.separator();
+        ui.label("PartyDeck has discontinued development; no further support will be provided.");
         ui.horizontal_wrapped(|ui| {
-            ui.label("Thank you to");
-            ui.hyperlink_to("♥Ko-fi", "https://ko-fi.com/wunner");
-            ui.label("supporters:");
+            ui.label("This final release is untested; if you encounter any issues that you did not experience in previous versions, feel free to revert to");
+            ui.hyperlink_to("0.8.5", "https://github.com/wunnr/partydeck/releases/tag/v0.8.5");
         });
+        ui.label("Thank you to Ko-fi supporters:");
         ui.label("Framilano, Jayden, Marc, Max Rei");
         ui.horizontal_wrapped(|ui| {
             ui.label("Thank you to");
@@ -49,6 +48,7 @@ impl PartyApp {
             ui.hyperlink_to("@Tau5", "https://github.com/Tau5");
             ui.hyperlink_to("@Twig6943", "https://github.com/Twig6943");
         });
+        ui.label("And thank you to anyone who downloaded and used PartyDeck! Happy gaming!");
     }
 
     pub fn display_page_settings(&mut self, ui: &mut Ui) {
@@ -65,11 +65,14 @@ impl PartyApp {
         });
         ui.separator();
 
-        match self.settings_page {
-            SettingsPage::General => self.display_settings_general(ui),
-            SettingsPage::Proton => self.display_settings_proton(ui),
-            SettingsPage::Gamescope => self.display_settings_gamescope(ui),
-        }
+        egui::ScrollArea::vertical()
+            .max_height(ui.available_height() - 30.0) // Remove lower menue height from avaliable
+            .auto_shrink(false)
+            .show(ui, |ui| match self.settings_page {
+                SettingsPage::General => self.display_settings_general(ui),
+                SettingsPage::Proton => self.display_settings_proton(ui),
+                SettingsPage::Gamescope => self.display_settings_gamescope(ui),
+            });
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
             ui.horizontal(|ui| {
@@ -88,6 +91,88 @@ impl PartyApp {
     }
 
     pub fn display_page_profiles(&mut self, ui: &mut Ui) {
+        if let Some((name, cfg)) = &mut self.profile_edit {
+            ui.heading(format!("Edit Profile: {}", name));
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Arguments:");
+                ui.add(egui::TextEdit::singleline(&mut cfg.args).desired_width(200.0));
+                if ui
+                    .button("🗑")
+                    .on_hover_text("Clear to use global setting")
+                    .clicked()
+                {
+                    cfg.args.clear();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Game root folder:");
+                ui.add_enabled(false, egui::TextEdit::singleline(&mut cfg.path_gameroot));
+                if ui
+                    .button("🗑")
+                    .on_hover_text("Clear to use global setting")
+                    .clicked()
+                {
+                    cfg.path_gameroot.clear();
+                }
+                if ui.button("🗁").clicked() {
+                    if let Ok(path) = dir_dialog() {
+                        cfg.path_gameroot = path.to_string_lossy().to_string();
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Executable:");
+                ui.add_enabled(false, egui::TextEdit::singleline(&mut cfg.exec));
+                if ui
+                    .button("🗑")
+                    .on_hover_text("Clear to use global setting")
+                    .clicked()
+                {
+                    cfg.exec.clear();
+                }
+                if ui.button("🗁").clicked() {
+                    let base_path = if !cfg.path_gameroot.is_empty() {
+                        cfg.path_gameroot.clone()
+                    } else if let Ok(h_path) = cur_handler!(self).get_game_rootpath() {
+                        h_path
+                    } else {
+                        String::new()
+                    };
+
+                    if !base_path.is_empty() {
+                        if let Ok(path) = file_dialog_relative(&PathBuf::from(base_path)) {
+                            cfg.exec = path.to_string_lossy().to_string();
+                        }
+                    } else {
+                        msg("Error", "Please specify a game root folder first.");
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Environment variables:");
+                ui.add(egui::TextEdit::singleline(&mut cfg.env));
+                if ui
+                    .button("🗑")
+                    .on_hover_text("Clear to use global setting")
+                    .clicked()
+                {
+                    cfg.env.clear();
+                }
+            });
+            ui.separator();
+            if ui.button("Save").clicked() {
+                if let Err(e) = save_profile_config(name, cfg) {
+                    msg("Error saving profile config", &format!("{}", e));
+                }
+                self.profile_edit = None;
+            }
+            if ui.button("Cancel").clicked() {
+                self.profile_edit = None;
+            }
+            return;
+        }
+
         ui.heading("Profiles");
         ui.separator();
         egui::ScrollArea::vertical()
@@ -95,14 +180,20 @@ impl PartyApp {
             .auto_shrink(false)
             .show(ui, |ui| {
                 for profile in &self.profiles {
-                    if ui.selectable_value(&mut 0, 1, profile).clicked() {
-                        if let Err(_) = std::process::Command::new("xdg-open")
-                            .arg(PATH_PARTY.join("profiles").join(profile))
-                            .status()
-                        {
-                            msg("Error", "Couldn't open profile directory!");
+                    ui.horizontal(|ui| {
+                        if ui.selectable_value(&mut 0, 1, profile).clicked() {
+                            if let Err(_) = std::process::Command::new("xdg-open")
+                                .arg(PATH_PARTY.join("profiles").join(profile))
+                                .status()
+                            {
+                                msg("Error", "Couldn't open profile directory!");
+                            }
+                        };
+                        if ui.button("Edit").clicked() {
+                            self.profile_edit =
+                                Some((profile.clone(), load_profile_config(profile)));
                         }
-                    };
+                    });
                 }
             });
         if ui.button("New").clicked() {
@@ -325,7 +416,7 @@ impl PartyApp {
                 } else {
                     self.instances.clear();
                     self.input_devices = scan_input_devices(&self.options.pad_filter_type);
-                    self.monitors = get_monitors_sdl();
+                    self.monitors = get_monitors_errorless();
                     self.profiles = scan_profiles(true);
                     self.instance_add_dev = None;
                     self.cur_page = MenuPage::Instances;

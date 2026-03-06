@@ -10,18 +10,18 @@ mod util;
 
 use crate::app::*;
 use crate::handler::Handler;
-use crate::monitor::*;
+use crate::monitor::get_monitors_errorless;
 use crate::paths::PATH_PARTY;
 use crate::profiles::remove_guest_profiles;
 use crate::util::*;
 
 fn main() -> eframe::Result {
-    // Our sdl/multimonitor stuff essentially depends on us running through x11.
-    unsafe {
-        std::env::set_var("SDL_VIDEODRIVER", "x11");
+    if std::env::args().any(|arg| arg == "--help") {
+        println!("{}", USAGE_TEXT);
+        std::process::exit(0);
     }
-
-    let monitors = get_monitors_sdl();
+    
+    let monitors = get_monitors_errorless();
 
     println!("[partydeck] Monitors detected:");
     for monitor in &monitors {
@@ -34,11 +34,6 @@ fn main() -> eframe::Result {
     }
 
     let args: Vec<String> = std::env::args().collect();
-
-    if std::env::args().any(|arg| arg == "--help") {
-        println!("{}", USAGE_TEXT);
-        std::process::exit(0);
-    }
 
     if std::env::args().any(|arg| arg == "--kwin") {
         let args: Vec<String> = std::env::args().filter(|arg| arg != "--kwin").collect();
@@ -148,7 +143,6 @@ fn main() -> eframe::Result {
 }
 
 static USAGE_TEXT: &str = r#"
-{}
 Usage: partydeck [OPTIONS]
 
 Options:

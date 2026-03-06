@@ -1,7 +1,38 @@
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::PathBuf;
 
 use crate::{handler::Handler, paths::*, util::copy_dir_recursive};
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ProfileConfig {
+    pub args: String,
+    #[serde(default)]
+    pub path_gameroot: String,
+    #[serde(default)]
+    pub exec: String,
+    #[serde(default)]
+    pub env: String,
+}
+
+pub fn load_profile_config(name: &str) -> ProfileConfig {
+    let path = PATH_PARTY.join(format!("profiles/{name}/profile.json"));
+    if let Ok(file) = std::fs::File::open(path) {
+        if let Ok(config) =
+            serde_json::from_reader::<_, ProfileConfig>(std::io::BufReader::new(file))
+        {
+            return config;
+        }
+    }
+    ProfileConfig::default()
+}
+
+pub fn save_profile_config(name: &str, config: &ProfileConfig) -> Result<(), Box<dyn Error>> {
+    let path = PATH_PARTY.join(format!("profiles/{name}/profile.json"));
+    let json = serde_json::to_string_pretty(config)?;
+    std::fs::write(path, json)?;
+    Ok(())
+}
 
 // Makes a folder and sets up Goldberg Steam Emu profile for Steam games
 pub fn create_profile(name: &str) -> Result<(), std::io::Error> {
@@ -44,8 +75,10 @@ pub fn create_profile_gamesave(name: &str, h: &Handler) -> Result<(), Box<dyn Er
     println!("[partydeck] Creating game save {} for {}", uid, name);
 
     std::fs::create_dir_all(&path_gamesave)?;
-    
-    if let Some(appid) = h.steam_appid && h.use_goldberg {
+
+    if let Some(appid) = h.steam_appid
+        && h.use_goldberg
+    {
         let path_exec = path_gamesave.join(&h.exec);
         let path_execdir = path_exec.parent().ok_or_else(|| "couldn't get parent")?;
         if !path_execdir.exists() {

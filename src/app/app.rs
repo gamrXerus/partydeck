@@ -30,7 +30,6 @@ pub enum SettingsPage {
 
 pub struct PartyApp {
     pub installed_steamapps: Vec<Option<steamlocate::App>>,
-    pub needs_update: bool,
     pub options: PartyConfig,
     pub cur_page: MenuPage,
     pub settings_page: SettingsPage,
@@ -46,6 +45,8 @@ pub struct PartyApp {
     pub selected_handler: usize,
     pub handler_edit: Option<Handler>,
     pub handler_lite: Option<Handler>,
+
+    pub profile_edit: Option<(String, ProfileConfig)>,
 
     pub loading_msg: Option<String>,
     pub loading_since: Option<std::time::Instant>,
@@ -72,9 +73,8 @@ impl PartyApp {
             None => MenuPage::Home,
         };
 
-        let mut app = Self {
+        Self {
             installed_steamapps: get_installed_steamapps(),
-            needs_update: false,
             options,
             cur_page,
             settings_page: SettingsPage::General,
@@ -87,17 +87,12 @@ impl PartyApp {
             selected_handler: 0,
             handler_edit: None,
             handler_lite,
+            profile_edit: None,
             profiles: scan_profiles(false),
             loading_msg: None,
             loading_since: None,
             task: None,
-        };
-
-        app.spawn_task("Checking for updates", move || {
-            app.needs_update = check_for_partydeck_update();
-        });
-
-        app
+        }
     }
 }
 

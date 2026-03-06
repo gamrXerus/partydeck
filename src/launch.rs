@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::app::{PartyConfig, PadFilterType};
+use crate::app::{PadFilterType, PartyConfig};
 use crate::handler::*;
 use crate::input::*;
 use crate::instance::*;
 use crate::paths::*;
-use crate::profiles::{create_profile, create_profile_gamesave};
+use crate::profiles::{create_profile, create_profile_gamesave, load_profile_config};
 use crate::util::*;
 
 pub fn setup_profiles(
@@ -45,7 +45,8 @@ pub fn launch_game(
             false => "splitscreen_kwin.js",
         };
 
-        kwin_dbus_start_script(PATH_RES.join(script)).map_err(|e| format!("Failed to start KWin script: {}", e))?;
+        kwin_dbus_start_script(PATH_RES.join(script))
+            .map_err(|e| format!("Failed to start KWin script: {}", e))?;
     }
 
     let sleep_time = match h.pause_between_starts {
@@ -123,7 +124,6 @@ pub fn launch_cmds(
     cfg: &PartyConfig,
 ) -> Result<Vec<std::process::Command>, Box<dyn std::error::Error>> {
     let win = h.win();
-    let exec = Path::new(&h.exec);
     let runtime = h.runtime.as_str();
     let gamescope = match cfg.kbm_support {
         true => BIN_GSC_KBM.as_path(),
@@ -136,10 +136,16 @@ pub fn launch_cmds(
                 .join("steam/steamapps/common/SteamLinuxRuntime_soldier")
                 .exists())
         || (runtime == "sniper"
-            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_sniper").exists()
-            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_sniper-arm64").exists())
+            && !PATH_STEAM
+                .join("steam/steamapps/common/SteamLinuxRuntime_sniper")
+                .exists()
+            && !PATH_STEAM
+                .join("steam/steamapps/common/SteamLinuxRuntime_sniper-arm64")
+                .exists())
         || (runtime == "steamrt4"
-            && !PATH_STEAM.join("steam/steamapps/common/SteamLinuxRuntime_4").exists())
+            && !PATH_STEAM
+                .join("steam/steamapps/common/SteamLinuxRuntime_4")
+                .exists())
     {
         return Err(format!("Steam Runtime {runtime} not found! Runtime must be installed on the same drive that the Steam client is installed on.").into());
     }
@@ -155,17 +161,36 @@ pub fn launch_cmds(
         .collect();
 
     for (i, instance) in instances.iter().enumerate() {
-        let gamedir = if h.is_saved_handler() && !cfg.disable_mount_gamedirs && cfg.profile_unique_dirs {
-            PATH_PARTY.join("tmp").join(format!("game-{}", i))
+        let prof_cfg = load_profile_config(&instance.profname);
+
+        let effective_path_gameroot = if !prof_cfg.path_gameroot.is_empty() {
+            prof_cfg.path_gameroot.clone()
         } else {
-            PathBuf::from(h.get_game_rootpath()?)
+            h.get_game_rootpath()?
         };
 
-        if !gamedir.join(exec).exists() {
-            return Err(format!("Executable not found: {}", gamedir.join(exec).display()).into());
+        let effective_exec = if !prof_cfg.exec.is_empty() {
+            prof_cfg.exec.clone()
+        } else {
+            h.exec.clone()
+        };
+
+        let gamedir =
+            if h.is_saved_handler() && !cfg.disable_mount_gamedirs && cfg.profile_unique_dirs {
+                PATH_PARTY.join("tmp").join(format!("game-{}", i))
+            } else {
+                PathBuf::from(effective_path_gameroot)
+            };
+
+        if !gamedir.join(&effective_exec).exists() {
+            return Err(format!(
+                "Executable not found: {}",
+                gamedir.join(&effective_exec).display()
+            )
+            .into());
         }
 
-        let path_exec = gamedir.join(exec);
+        let path_exec = gamedir.join(&effective_exec);
         let cwd = path_exec.parent().ok_or_else(|| "couldn't get parent")?;
 
         let path_prof = PATH_PARTY.join("profiles").join(&instance.profname);
@@ -218,10 +243,20 @@ pub fn launch_cmds(
             cmd.env("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "1");
         }
         if cfg.pad_filter_type == PadFilterType::OnlySteamInput {
-            cmd.env("SDL_GAMECONTROLLER_IGNORE_DEVICES", SDL_GAMECONTROLLER_IGNORE_DEVICES);
+            cmd.env(
+                "SDL_GAMECONTROLLER_IGNORE_DEVICES",
+                SDL_GAMECONTROLLER_IGNORE_DEVICES,
+            );
         }
         if !h.env.is_empty() {
             for env_var in h.env.split_whitespace() {
+                if let Some((key, value)) = env_var.split_once('=') {
+                    cmd.env(key, value);
+                }
+            }
+        }
+        if !prof_cfg.env.is_empty() {
+            for env_var in prof_cfg.env.split_whitespace() {
                 if let Some((key, value)) = env_var.split_once('=') {
                     cmd.env(key, value);
                 }
@@ -267,6 +302,7 @@ pub fn launch_cmds(
             }
             if !kbms.is_empty() {
                 cmd.arg(format!("--libinput-hold-dev={}", kbms));
+                cmd.arg("--grab");
             }
         }
         cmd.arg("--");
@@ -329,18 +365,16 @@ pub fn launch_cmds(
                 cmd.env("SteamGameId", &appid.to_string());
             }
 
-            let sdk32_link = std::fs::read_link(PATH_STEAM.join("sdk32")).map_err(|e| format!("Failed to read sdk32 link: {}", e))?;
-            let sdk64_link = std::fs::read_link(PATH_STEAM.join("sdk64")).map_err(|e| format!("Failed to read sdk64 link: {}", e))?;
+            let sdk32_link = std::fs::read_link(PATH_STEAM.join("sdk32"))
+                .map_err(|e| format!("Failed to read sdk32 link: {}", e))?;
+            let sdk64_link = std::fs::read_link(PATH_STEAM.join("sdk64"))
+                .map_err(|e| format!("Failed to read sdk64 link: {}", e))?;
 
-            cmd.arg("--bind").args([
-                PATH_RES.join("goldberg/linux32"),
-                sdk32_link,
-            ]);
+            cmd.arg("--bind")
+                .args([PATH_RES.join("goldberg/linux32"), sdk32_link]);
 
-            cmd.arg("--bind").args([
-                PATH_RES.join("goldberg/linux64"),
-                sdk64_link,
-            ]);
+            cmd.arg("--bind")
+                .args([PATH_RES.join("goldberg/linux64"), sdk64_link]);
 
             if win {
                 cmd.arg("--bind").args([
@@ -367,9 +401,8 @@ pub fn launch_cmds(
                     cmd.arg("--");
                 }
                 "sniper" => {
-                    let sniper_path = PATH_STEAM.join(
-                        "steam/steamapps/common/SteamLinuxRuntime_sniper/_v2-entry-point",
-                    );
+                    let sniper_path = PATH_STEAM
+                        .join("steam/steamapps/common/SteamLinuxRuntime_sniper/_v2-entry-point");
                     // old installations of sniper go in a folder named -arm64 even though it is x86_64?
                     let sniper_arm_path = PATH_STEAM.join(
                         "steam/steamapps/common/SteamLinuxRuntime_sniper-arm64/_v2-entry-point",
@@ -383,9 +416,8 @@ pub fn launch_cmds(
                 }
                 "steamrt4" => {
                     cmd.arg(
-                        PATH_STEAM.join(
-                            "steam/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point",
-                        ),
+                        PATH_STEAM
+                            .join("steam/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point"),
                     );
                     cmd.arg("--");
                 }
@@ -395,19 +427,43 @@ pub fn launch_cmds(
 
         cmd.arg(&path_exec);
 
+        let prof_cfg = load_profile_config(&instance.profname);
+
         for arg in h.args.split_whitespace() {
-            let processed_arg = match arg {
-                "$PROFILE" => &instance.profname,
-                "$WIDTH" => &instance.width.to_string(),
-                "$HEIGHT" => &instance.height.to_string(),
-                "$RESOLUTION" => &format!("{}x{}", instance.width, instance.height),
-                "$INSTANCECOUNT" => &instances.len().to_string(),
-                "$INSTANCENUM" => &i.to_string(),
-                "$GAMEDIR" => &gamedir.os_fmt(win),
-                "$HANDLERDIR" => &h.path_handler.os_fmt(win),
-                _ => &String::from(arg).sanitize_path(),
+            match arg {
+                "$PROFILE" => {
+                    cmd.arg(&instance.profname);
+                }
+                "$PROFILE_ARGS" => {
+                    for part in shlex::split(&prof_cfg.args).unwrap_or_default() {
+                        cmd.arg(part);
+                    }
+                }
+                "$WIDTH" => {
+                    cmd.arg(&instance.width.to_string());
+                }
+                "$HEIGHT" => {
+                    cmd.arg(&instance.height.to_string());
+                }
+                "$RESOLUTION" => {
+                    cmd.arg(format!("{}x{}", instance.width, instance.height));
+                }
+                "$INSTANCECOUNT" => {
+                    cmd.arg(instances.len().to_string());
+                }
+                "$INSTANCENUM" => {
+                    cmd.arg(i.to_string());
+                }
+                "$GAMEDIR" => {
+                    cmd.arg(gamedir.os_fmt(win));
+                }
+                "$HANDLERDIR" => {
+                    cmd.arg(h.path_handler.os_fmt(win));
+                }
+                _ => {
+                    cmd.arg(String::from(arg).sanitize_path());
+                }
             };
-            cmd.arg(processed_arg);
         }
     }
 
