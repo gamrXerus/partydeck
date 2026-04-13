@@ -11,6 +11,15 @@ A split-screen game launcher for Linux/SteamOS
     <img src=".github/assets/gameplay1.png" width="49%" />
 </p>
 
+> [!NOTE]
+> ### New discussion forum!
+> The discussion forum is now open! Join the matrix server for help, to contribute to the development discussion, or just leave feedback!
+> - [Matrix server](https://matrix.to/#/#partydeck:matrix.org)
+> - [More information](https://github.com/partydeck/partydeck/issues/168)
+
+> [!NOTE]
+> PartyDeck is in early development, and may contain violations of software best practices and security flaws; use at your own discretion! If you are experienced in software any advice and contributions are greatly appreciated.
+
 ## Features
 
 - Runs multiple instances of a game at a time and automatically tiles up to 4 game windows per monitor
@@ -43,18 +52,43 @@ Once in the main menu, click the + button to add a game, or click the button wit
 
 ## Building
 
-To build PartyDeck, You'll need a Rust toolchain installed with the 2024 Edition. For the mouse/keyboard gamescope build, you'll need ninja and meson installed.
-Clone the repo with submodules by running `git clone --recurse-submodules https://github.com/gamrXerus/partydeck.git`. Navigate to the gamescope submodule at `deps/gamescope` and run these commands to build the mouse/keyboard gamescope:
+You'll need a Rust toolchain with the 2024 Edition. For building the mouse/keyboard gamescope fork, you'll also need `meson` and `ninja` installed.
+
+Clone the repo and initialise submodules:
 
 ```
-git submodule update --init
-meson setup build/ -Denable_openvr_support=false
-ninja -C build/
+git clone https://github.com/partydeck/partydeck.git
+cd partydeck
+git submodule update --init --recursive --depth 1
 ```
 
-Then, run `get_deps_releases.sh` to get the latest releases of Umu Launcher and Goldberg Steam Emu. 
+Then build with:
 
-Finally, in the main partydeck folder, run `build.sh`. This will build the executable, and place it in the `build` folder, along with the relevant dependencies and resources.
+```
+cargo build --release
+```
+
+If built with download deps, the build script downloads the latest releases of Goldberg Steam Emu and UMU Launcher from GitHub. The output binary and bundled dependencies are placed in `target/release/`.
+
+### Build feature flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `download_deps` | off | Downloads Goldberg Steam Emu and UMU Launcher from GitHub releases with known good versions|
+| `download_deps_latest` | off | Downloads Goldberg Steam Emu and UMU Launcher from GitHub releases with latest available |
+| `build_gamescope` | off | Builds the mouse/keyboard gamescope fork from the submodule (requires `meson` and `ninja`) |
+
+**Build with gamescope:**
+
+```
+cargo build --release -F build_gamescope
+```
+
+**Download known dependancies:**
+
+```
+cargo build --release -F download_deps
+```
 
 
 ## How it Works
@@ -76,6 +110,8 @@ PartyDeck uses a few software layers to provide a console-like split-screen gami
 
 ## Credits/Thanks
 
+- [@wunnr](https://github.com/wunnr) for starting partydeck
+- [@Blahkaey](https://github.com/blahkaey) for helping to maintain partydeck and the comunity
 - [@davidawesome02-backup](https://github.com/davidawesome02-backup) for the [Gamescope keyboard/mouse fork](https://github.com/davidawesome02-backup/gamescope), and Valve for Gamescope
 - [@blckink](https://github.com/blckink) for contributions
 - MrGoldberg & Detanup01 for [Goldberg Steam Emu](https://github.com/Detanup01/gbe_fork/)

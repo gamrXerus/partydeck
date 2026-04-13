@@ -1,11 +1,14 @@
 use crate::paths::{PATH_HOME, PATH_PARTY};
 
 use dialog::{Choice, DialogBox};
-use eframe::egui::TextBuffer;
 use rfd::FileDialog;
 use std::error::Error;
+use std::fs::{self, File};
+use std::io;
 use std::path::PathBuf;
 use std::process::Command;
+use zip::ZipWriter;
+use zip::write::SimpleFileOptions;
 
 pub fn msg(title: &str, contents: &str) {
     let _ = dialog::Message::new(contents).title(title).show();
@@ -51,18 +54,17 @@ pub fn copy_dir_recursive(src: &PathBuf, dest: &PathBuf) -> Result<(), Box<dyn E
         dest.display()
     );
 
-    let walk_path = walkdir::WalkDir::new(src).min_depth(1).follow_links(false);
+    let walk_path = walk_dir(src)?;
 
     for entry in walk_path {
-        let entry = entry?;
-        let rel_path = entry.path().strip_prefix(src)?;
+        let rel_path = entry.strip_prefix(src)?;
         let new_path = dest.join(rel_path);
 
-        if entry.file_type().is_dir() {
-            std::fs::create_dir_all(&new_path)?;
-        } else if entry.file_type().is_symlink() {
-            let symlink_src = std::fs::read_link(entry.path())?;
+        if entry.is_symlink() {
+            let symlink_src = std::fs::read_link(entry)?;
             std::os::unix::fs::symlink(symlink_src, new_path)?;
+        } else if entry.is_dir() {
+            std::fs::create_dir_all(&new_path)?;
         } else {
             if let Some(parent) = new_path.parent() {
                 std::fs::create_dir_all(parent)?;
@@ -71,21 +73,48 @@ pub fn copy_dir_recursive(src: &PathBuf, dest: &PathBuf) -> Result<(), Box<dyn E
                 std::fs::remove_file(&new_path)?;
             }
 
-            std::fs::copy(entry.path(), new_path)?;
+            std::fs::copy(entry, new_path)?;
         }
     }
 
     Ok(())
 }
 
+pub fn walk_dir(path: &PathBuf) -> io::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+
+    for entry in fs::read_dir(path)?.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() && !path.is_symlink() {
+            paths.push(path.clone());
+            paths.extend(walk_dir(&path)?);
+        } else {
+            paths.push(path);
+        }
+    }
+
+    Ok(paths)
+}
+
 pub fn zip_dir(src_dir: &PathBuf, dest: &PathBuf) -> Result<(), Box<dyn Error>> {
-    // Temp, should maybe be done with a crate
-    std::process::Command::new("zip")
-        .current_dir(src_dir)
-        .arg("-r")
-        .arg(dest.to_string_lossy().as_str())
-        .arg(".")
-        .output()?;
+    let file = File::create(dest)?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default();
+
+    for entry in walk_dir(src_dir)? {
+        let name = entry.strip_prefix(src_dir)?;
+        if entry.is_symlink() {
+            let target = fs::read_link(&entry)?;
+            zip.add_symlink_from_path(name, target, options)?;
+        } else if entry.is_dir() {
+            zip.add_directory_from_path(name, options)?;
+        } else {
+            zip.start_file_from_path(name, options)?;
+            io::copy(&mut fs::File::open(&entry)?, &mut zip)?;
+        }
+    }
+
+    zip.finish()?;
     Ok(())
 }
 
@@ -162,6 +191,32 @@ pub fn clear_tmp() -> Result<(), Box<dyn Error>> {
     std::fs::remove_dir_all(&tmp)?;
 
     Ok(())
+}
+
+pub fn check_for_partydeck_update() -> bool {
+    // Try to get the latest release tag from GitHub
+    if let Ok(client) = reqwest::blocking::Client::new()
+        .get("https://api.github.com/repos/wunnr/partydeck/releases/latest")
+        .header("User-Agent", "partydeck")
+        .send()
+    {
+        if let Ok(release) = client.json::<serde_json::Value>() {
+            // Extract the tag name (vX.X.X format)
+            if let Some(tag_name) = release["tag_name"].as_str() {
+                // Strip the 'v' prefix
+                let latest_version = tag_name.strip_prefix('v').unwrap_or(tag_name);
+
+                // Get current version from env!
+                let current_version = env!("CARGO_PKG_VERSION");
+
+                // Compare versions directly
+                return latest_version != current_version;
+            }
+        }
+    }
+
+    // Default to false if any part of the process fails
+    false
 }
 
 // Sends the splitscreen script to the active KWin session through DBus
